@@ -1,4 +1,4 @@
-# PAL2NAL v14.1 — Bug Report & Fixes (2026-04-18)
+# PAL2NAL v14.1 (2017-10-07) — Bug Report & Fixes (2026-04-18)
 
 Full code read of `pal2nal.pl` (2010 lines). Issues are ranked by severity and have been resolved via individual Pull Requests against the mirrored repository.
 
