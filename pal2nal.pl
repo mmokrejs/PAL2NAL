@@ -1830,8 +1830,96 @@ sub pn2codon {
 
         } else {
 
-            $retval{'result'} = -1;
-
+            # USER REQUESTED FALLBACK: Frameshift Recovery Algorithm
+            # If the global regex fails due to frameshifts, we use a 1-lookahead
+            # Viterbi-style algorithm to pin-point the error, skip extra bases,
+            # pad missing bases with '-', and recover the reading frame ASAP.
+            $message = "WARNING: Global match failed. Falling back to frameshift recovery.";
+            push(@{$retval{'message'}}, $message);
+            
+            local($nuc_idx) = 0;
+            local($codonseq) = "";
+            local($nuclen) = length($nuc);
+            
+            foreach $i (0..$peplen - 1) {
+                local($tmpaa) = substr($pep, $i, 1);
+                local($nextaa) = ($i < $peplen - 1) ? substr($pep, $i + 1, 1) : "";
+                
+                if ($tmpaa eq '-') {
+                    $codonseq .= '---';
+                    next;
+                }
+                
+                local($R1) = "";
+                if ($tmpaa =~ /[ACDEFGHIKLMNPQRSTVWY_\*XU]/) { $R1 = $p2c{$tmpaa}; } else { $R1 = $p2c{'X'}; }
+                
+                local($R2) = "";
+                if ($nextaa ne "" && $nextaa ne '-') {
+                    if ($nextaa =~ /[ACDEFGHIKLMNPQRSTVWY_\*XU]/) { $R2 = $p2c{$nextaa}; } else { $R2 = $p2c{'X'}; }
+                }
+                
+                local($best_c) = 3;
+                local($best_score) = -1;
+                
+                foreach local($c) (1, 2, 3, 4, 5) {
+                    local($M1) = 0;
+                    if ($c == 3) {
+                        if ($nuc_idx + 3 <= $nuclen && substr($nuc, $nuc_idx, 3) =~ /^$R1$/i) { $M1 = 1.0; }
+                    } elsif ($c == 4) {
+                        if ($nuc_idx + 4 <= $nuclen) {
+                            if (substr($nuc, $nuc_idx, 3) =~ /^$R1$/i || substr($nuc, $nuc_idx + 1, 3) =~ /^$R1$/i) { $M1 = 0.8; }
+                        }
+                    } elsif ($c == 5) {
+                        if ($nuc_idx + 5 <= $nuclen) {
+                            if (substr($nuc, $nuc_idx, 3) =~ /^$R1$/i || substr($nuc, $nuc_idx + 1, 3) =~ /^$R1$/i || substr($nuc, $nuc_idx + 2, 3) =~ /^$R1$/i) { $M1 = 0.6; }
+                        }
+                    }
+                    
+                    local($M2) = 0;
+                    if ($R2 ne "" && $nuc_idx + $c + 3 <= $nuclen && substr($nuc, $nuc_idx + $c, 3) =~ /^$R2$/i) {
+                        $M2 = 1.1;
+                    }
+                    
+                    local($score) = $M1 + $M2;
+                    if ($score > $best_score) {
+                        $best_score = $score;
+                        $best_c = $c;
+                    }
+                }
+                
+                if ($best_score == 0 && $nuc_idx + 3 > $nuclen) {
+                    $best_c = $nuclen - $nuc_idx;
+                    $best_c = 3 if $best_c < 0;
+                }
+                
+                if ($best_c >= 3) {
+                    local($matched_slice) = substr($nuc, $nuc_idx, 3);
+                    if ($best_c == 4) {
+                        if (substr($nuc, $nuc_idx + 1, 3) =~ /^$R1$/i && substr($nuc, $nuc_idx, 3) !~ /^$R1$/i) {
+                            $matched_slice = substr($nuc, $nuc_idx + 1, 3);
+                        }
+                    } elsif ($best_c == 5) {
+                        if (substr($nuc, $nuc_idx + 2, 3) =~ /^$R1$/i && substr($nuc, $nuc_idx, 3) !~ /^$R1$/i && substr($nuc, $nuc_idx + 1, 3) !~ /^$R1$/i) {
+                            $matched_slice = substr($nuc, $nuc_idx + 2, 3);
+                        } elsif (substr($nuc, $nuc_idx + 1, 3) =~ /^$R1$/i && substr($nuc, $nuc_idx, 3) !~ /^$R1$/i) {
+                            $matched_slice = substr($nuc, $nuc_idx + 1, 3);
+                        }
+                    }
+                    $codonseq .= $matched_slice . ('-' x (3 - length($matched_slice)));
+                } elsif ($best_c == 2) {
+                    $codonseq .= substr($nuc, $nuc_idx, 2) . '-';
+                } elsif ($best_c == 1) {
+                    $codonseq .= substr($nuc, $nuc_idx, 1) . '--';
+                } elsif ($best_c == 0) {
+                    $codonseq .= '---';
+                }
+                
+                $nuc_idx += $best_c;
+            }
+            
+            $retval{'codonseq'} = $codonseq;
+            $retval{'result'} = 2;
+            
         }
 
     }
