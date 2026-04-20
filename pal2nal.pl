@@ -1860,8 +1860,8 @@ sub pn2codon {
                 
                 local($best_c) = 3;
                 local($best_score) = -1;
-                
-                foreach local($c) (1, 2, 3, 4, 5) {
+                local($c);
+                foreach $c (1, 2, 3, 4, 5) {
                     local($M1) = 0;
                     if ($c == 3) {
                         if ($nuc_idx + 3 <= $nuclen && substr($nuc, $nuc_idx, 3) =~ /^$R1$/i) { $M1 = 1.0; }
@@ -1893,18 +1893,43 @@ sub pn2codon {
                 }
                 
                 if ($best_c >= 3) {
-                    local($matched_slice) = substr($nuc, $nuc_idx, 3);
-                    if ($best_c == 4) {
-                        if (substr($nuc, $nuc_idx + 1, 3) =~ /^$R1$/i && substr($nuc, $nuc_idx, 3) !~ /^$R1$/i) {
-                            $matched_slice = substr($nuc, $nuc_idx + 1, 3);
+                    local($window) = substr($nuc, $nuc_idx, $best_c);
+                    local($matched_slice) = "";
+                    local($slice_score) = -1;
+                    
+                    if ($best_c == 3) {
+                        $matched_slice = $window;
+                    } elsif ($best_c == 4) {
+                        local($x);
+                        foreach $x (0..3) {
+                            local($sl) = substr($window, 0, $x) . substr($window, $x + 1);
+                            if ($sl =~ /^$R1$/i) {
+                                local($sc) = 1;
+                                local($drp) = substr($window, $x, 1);
+                                if ($x > 0 && substr($window, $x - 1, 1) eq $drp) { $sc++; }
+                                elsif ($x < 3 && substr($window, $x + 1, 1) eq $drp) { $sc++; }
+                                if ($sc > $slice_score) { $slice_score = $sc; $matched_slice = $sl; }
+                            }
                         }
                     } elsif ($best_c == 5) {
-                        if (substr($nuc, $nuc_idx + 2, 3) =~ /^$R1$/i && substr($nuc, $nuc_idx, 3) !~ /^$R1$/i && substr($nuc, $nuc_idx + 1, 3) !~ /^$R1$/i) {
-                            $matched_slice = substr($nuc, $nuc_idx + 2, 3);
-                        } elsif (substr($nuc, $nuc_idx + 1, 3) =~ /^$R1$/i && substr($nuc, $nuc_idx, 3) !~ /^$R1$/i) {
-                            $matched_slice = substr($nuc, $nuc_idx + 1, 3);
+                        local($x); local($y);
+                        foreach $x (0..3) {
+                            foreach $y ($x + 1..4) {
+                                local($sl) = substr($window, 0, $x) . substr($window, $x + 1, $y - $x - 1) . substr($window, $y + 1);
+                                if ($sl =~ /^$R1$/i) {
+                                    local($sc) = 1;
+                                    local($d1) = substr($window, $x, 1);
+                                    local($d2) = substr($window, $y, 1);
+                                    if ($x > 0 && substr($window, $x - 1, 1) eq $d1) { $sc++; }
+                                    elsif ($x < 4 && substr($window, $x + 1, 1) eq $d1) { $sc++; }
+                                    if ($y > 0 && substr($window, $y - 1, 1) eq $d2) { $sc++; }
+                                    elsif ($y < 4 && substr($window, $y + 1, 1) eq $d2) { $sc++; }
+                                    if ($sc > $slice_score) { $slice_score = $sc; $matched_slice = $sl; }
+                                }
+                            }
                         }
                     }
+                    if ($slice_score == -1 && $best_c > 3) { $matched_slice = substr($window, 0, 3); }
                     $codonseq .= $matched_slice . ('-' x (3 - length($matched_slice)));
                 } elsif ($best_c == 2) {
                     $codonseq .= substr($nuc, $nuc_idx, 2) . '-';
