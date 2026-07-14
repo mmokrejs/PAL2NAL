@@ -7,7 +7,11 @@
 #
 #
 #
-#    pal2nal.pl  (v14.1)                                  Mikita Suyama
+#    pal2nal.pl  (v14.1-msp)                              Mikita Suyama
+#    NOTE: "-msp" marks the mutation_scatter_plot patched build (full-DP Viterbi
+#    frameshift recovery + homopolymer-aware best-slice dropping).  Stock
+#    upstream reports "v14.1"; the suffix lets --help / provenance tell the
+#    patched build apart from stock.  This branch is the deployed/canonical one.
 #
 #    Usage:  pal2nal.pl  pep.aln  nuc.fasta  [nuc.fasta...]  [options]  >  output
 #
@@ -1970,7 +1974,7 @@ sub my1while {
 sub showhelp {
 print STDERR<<EOF;
 
-pal2nal.pl  (v14.1)
+pal2nal.pl  (v14.1-msp)
 
 Usage:  pal2nal.pl  pep.aln  nuc.fasta  [nuc.fasta...]  [options]
 
