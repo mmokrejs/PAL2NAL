@@ -1889,7 +1889,42 @@ sub pn2codon {
                     my $sub = substr($nuc, $nuc_idx, $c);
                     $sub = "" unless defined $sub;
                     if (length($sub) > $expected_len) {
-                        $sub = substr($sub, 0, $expected_len);
+                        if ($expected_len == 3 && (length($sub) == 4 || length($sub) == 5)) {
+                            # Homopolymer-aware dropping (grafted from the 1-lookahead
+                            # branch's commit 7f701af): when the DP over-calls a codon by
+                            # 1-2 nt, drop the base(s) that EXTEND a homopolymer run
+                            # rather than naively keeping the first 3.  Each candidate
+                            # 3-nt slice is scored by how many dropped bases repeat an
+                            # adjacent base; the best-scoring slice wins (first-3 as a
+                            # last resort).
+                            my $window = $sub;
+                            my $matched_slice = ""; my $slice_score = -1;
+                            if (length($window) == 4) {
+                                for my $x (0..3) {
+                                    my $sl = substr($window,0,$x) . substr($window,$x+1);
+                                    next unless length($sl) == 3;
+                                    my $sc = 0; my $drp = substr($window,$x,1);
+                                    if    ($x > 0 && substr($window,$x-1,1) eq $drp) { $sc++; }
+                                    elsif ($x < 3 && substr($window,$x+1,1) eq $drp) { $sc++; }
+                                    if ($sc > $slice_score) { $slice_score = $sc; $matched_slice = $sl; }
+                                }
+                            } else {  # length 5
+                                for my $x (0..4) { for my $y ($x+1..4) {
+                                    my $sl = substr($window,0,$x) . substr($window,$x+1,$y-$x-1) . substr($window,$y+1);
+                                    next unless length($sl) == 3;
+                                    my $sc = 0; my $d1 = substr($window,$x,1); my $d2 = substr($window,$y,1);
+                                    if    ($x > 0 && substr($window,$x-1,1) eq $d1) { $sc++; }
+                                    elsif ($x < 4 && substr($window,$x+1,1) eq $d1) { $sc++; }
+                                    if    ($y > 0 && substr($window,$y-1,1) eq $d2) { $sc++; }
+                                    elsif ($y < 4 && substr($window,$y+1,1) eq $d2) { $sc++; }
+                                    if ($sc > $slice_score) { $slice_score = $sc; $matched_slice = $sl; }
+                                } }
+                            }
+                            $matched_slice = substr($window,0,3) if $slice_score == -1;
+                            $sub = $matched_slice;
+                        } else {
+                            $sub = substr($sub, 0, $expected_len);
+                        }
                     }
                     $codonseq .= $sub . ('-' x ($expected_len - length($sub)));
                 }
