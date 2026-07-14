@@ -7,7 +7,7 @@
 #
 #
 #
-#    pal2nal.pl  (v14.1)                                      Mikita Suyama
+#    pal2nal.pl  (v14.1)                                  Mikita Suyama
 #
 #    Usage:  pal2nal.pl  pep.aln  nuc.fasta  [nuc.fasta...]  [options]  >  output
 #
@@ -461,6 +461,8 @@ foreach $i (0..$#aaid) {
 foreach $i (0..$#aaid) {
     $aaseq[$i] =~ s/\\/1/g;
     $aaseq[$i] =~ s/\/(-*)[A-Z\*]/-${1}2/g;
+    $aaseq[$i] =~ s/\!/1/g;
+    $aaseq[$i] =~ s/\?/2/g;
 }
 
 
@@ -1830,8 +1832,74 @@ sub pn2codon {
 
         } else {
 
-            $retval{'result'} = -1;
-
+            # USER REQUESTED FALLBACK: Frameshift Recovery Algorithm
+            # If the global regex fails due to frameshifts, we use a 1-lookahead
+            # Viterbi-style algorithm to pin-point the error, skip extra bases,
+            # pad missing bases with '-', and recover the reading frame ASAP.
+            $message = "WARNING: Global match failed. Falling back to frameshift recovery.";
+            push(@{$retval{'message'}}, $message);
+            my @score = ();
+            my @backtrack = ();
+            $score[0][0] = 0;
+            my $nuclen = length($nuc);
+            
+            for my $i (1 .. $peplen) {
+                my $tmpaa = substr($pep, $i - 1, 1);
+                my $R1 = ($tmpaa =~ /[ACDEFGHIKLMNPQRSTVWY_\*XU]/) ? $p2c{$tmpaa} : $p2c{'X'};
+                my @c_options = ($tmpaa eq '-') ? (0) : ($tmpaa =~ /\d/ ? (int($tmpaa)) : (1, 2, 3, 4, 5));
+                
+                for my $j (0 .. $nuclen) {
+                    $score[$i][$j] = -999999;
+                    foreach my $c (@c_options) {
+                        next if $j - $c < 0 || !defined $score[$i - 1][$j - $c];
+                        my $match_score = ($c == 0 || $tmpaa =~ /\d/) ? 0 : -2.0; # Base frameshift penalty
+                        if ($c == 3) {
+                            $match_score = (substr($nuc, $j - 3, 3) =~ /^$R1$/i) ? 1.0 : -1.0;
+                        } elsif ($c > 3 && substr($nuc, $j - $c, $c) =~ /$R1/i) {
+                            $match_score += 1.0;
+                        }
+                        my $s = $score[$i - 1][$j - $c] + $match_score;
+                        if ($s > $score[$i][$j]) {
+                            $score[$i][$j] = $s;
+                            $backtrack[$i][$j] = $c;
+                        }
+                    }
+                }
+            }
+            
+            # Backtrack
+            my $curr_j = 0;
+            for my $j (0 .. $nuclen) { $curr_j = $j if $score[$peplen][$j] > $score[$peplen][$curr_j]; }
+            
+            my @path;
+            for (my $i = $peplen; $i > 0; $i--) {
+                my $c = defined $backtrack[$i][$curr_j] ? $backtrack[$i][$curr_j] : 3;
+                unshift(@path, $c);
+                $curr_j -= $c;
+            }
+            
+            # Reconstruct sequence
+            my $nuc_idx = ($curr_j > 0) ? $curr_j : 0;
+            my $codonseq = "";
+            for my $i (0 .. $peplen - 1) {
+                my $c = $path[$i];
+                my $tmpaa = substr($pep, $i, 1);
+                if ($tmpaa ne '-') {
+                    my $expected_len = ($tmpaa =~ /\d/) ? int($tmpaa) : 3;
+                    my $sub = substr($nuc, $nuc_idx, $c);
+                    $sub = "" unless defined $sub;
+                    if (length($sub) > $expected_len) {
+                        $sub = substr($sub, 0, $expected_len);
+                    }
+                    $codonseq .= $sub . ('-' x ($expected_len - length($sub)));
+                }
+                $nuc_idx += $c;
+            }
+            
+            $retval{'codonseq'} = $codonseq;
+            print STDERR "DEBUG: frameshift codonseq length: ", length($codonseq), ", peplen: $peplen, nuclen: $nuclen, nuc_idx: $nuc_idx\n";
+            $retval{'result'} = 2;
+            
         }
 
     }
