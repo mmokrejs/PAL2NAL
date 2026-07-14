@@ -1936,7 +1936,6 @@ sub pn2codon {
             }
             
             $retval{'codonseq'} = $codonseq;
-            print STDERR "DEBUG: frameshift codonseq length: ", length($codonseq), ", peplen: $peplen, nuclen: $nuclen, nuc_idx: $nuc_idx\n";
             $retval{'result'} = 2;
             
         }
